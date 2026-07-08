@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: mysql
-          image: 146924692998.dkr.ecr.us-east-1.amazonaws.com/et-devops-db # Colocar uri de tu imagen en ECR
+          image: 146924692998.dkr.ecr.us-east-1.amazonaws.com/et-devops-db:eks-v1 # Colocar uri de tu imagen en ECR
           ports:
             - containerPort: 3306
           env:
