@@ -1,0 +1,75 @@
+name: Kubernetes Monitor
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '*/5 * * * *'
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+      
+      - name: Instalar kubectl
+        uses: azure/setup-kubectl@v4
+        
+
+
+      - name: Configurar kubectl
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+        run: |
+          aws eks update-kubeconfig \
+            --region $AWS_REGION \
+            --name $EKS_CLUSTER_NAME
+
+      - name: Verificar conexión al cluster
+        run: |
+          kubectl get nodes -o wide 
+
+      - name: Verificar Health API
+        id: healthcheck
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://k8s-tienda-tiendafr-51122e719c-318406bc17e5b379.elb.us-east-1.amazonaws.com/api/health)
+
+          echo "HTTP STATUS = $STATUS"
+
+          if [ "$STATUS" != "200" ]; then
+            echo "health=DOWN" >> $GITHUB_OUTPUT
+          else
+            echo "health=UP" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Reiniciar Deployment
+        if: steps.healthcheck.outputs.health == 'DOWN'
+        run: |
+          echo "Servicio caído."
+          kubectl rollout restart deployment tienda-backend -n tienda
+          sleep 30
+
+      - name: Verificar nuevamente
+        if: steps.healthcheck.outputs.health == 'DOWN'
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://k8s-tienda-tiendafr-51122e719c-318406bc17e5b379.elb.us-east-1.amazonaws.com/api/health)
+
+          echo "Nuevo estado HTTP: $STATUS"
+
+          if [ "$STATUS" != "200" ]; then
+            echo "El servicio sigue caído."
+            exit 1
+          fi
+
+          echo "Servicio recuperado."
