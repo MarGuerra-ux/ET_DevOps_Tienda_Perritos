@@ -6,7 +6,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 const {
-  DB_HOST = tienda-db, // acá resuelve internamente en eks
+  DB_HOST = "tienda-db",
   DB_USER = "root",
   DB_PASSWORD = "admin123",
   DB_NAME = "tienda_perritos",
@@ -128,11 +128,15 @@ app.delete("/api/productos/:id", async (req, res) => {
   }
 });
 
-// Endpoint de salud para Kubernetes
+// Endpoint de Health Check
 app.get("/api/health", (req, res) => {
   res.status(200).json({
-    status: "ok",
-    message: "Backend de tienda de perritos en ejecución."
+    status: "UP",
+    service: "Tienda Perritos API",
+    version: "1.0.0",
+    environment: process.env.NODE_ENV || "development",
+    database: "connected",
+    timestamp: new Date().toISOString()
   });
 });
 

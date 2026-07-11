@@ -1,75 +1,177 @@
-name: Kubernetes Monitor
+# =====================================================================
+#
+# Kubernetes Availability Monitor
+#
+# Proyecto:
+#   Tienda Perritos - DevOps
+#
+# Descripción:
+#   Workflow encargado de preparar el entorno de ejecución
+#   y delegar la lógica del monitoreo al script monitor.sh
+#
+# Autores:
+#   Mar Guerra
+#   Matías Vergara
+#
+# =====================================================================
+
+name: Kubernetes Availability Monitor
 
 on:
-  workflow_dispatch: {}
+
+  workflow_dispatch:
+
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: "*/5 * * * *"
+
+env:
+
+  # ==========================================================
+  # AWS
+  # ==========================================================
+  AWS_REGION: us-east-1
+  CLUSTER_NAME: ET_DevOps_Cluster
+
+  # ==========================================================
+  # Kubernetes
+  # ==========================================================
+  NAMESPACE: tienda
+  DEPLOYMENT_NAME: tienda-backend
+
+  # ==========================================================
+  # Aplicación
+  # ==========================================================
+  HEALTH_URL: http://k8s-tienda-tiendafr-51122e719c-318406bc17e5b379.elb.us-east-1.amazonaws.com/api/health
+
+  # ==========================================================
+  # Monitor
+  # ==========================================================
+  MAX_RECOVERY_ATTEMPTS: 2
+  WAIT_SECONDS: 30
+
+  # ==========================================================
+  # Destinatarios
+  # ==========================================================
+  MAIL_TO: ${{ secrets.MAIL_TO }}
 
 jobs:
+
   monitor:
+
+    name: Kubernetes Availability Monitor
+
     runs-on: ubuntu-latest
 
     steps:
 
-      - name: Checkout
+      # ==========================================================
+      # Obtener el código del repositorio
+      # ==========================================================
+      - name: Checkout del repositorio
         uses: actions/checkout@v4
 
+      # ==========================================================
+      # Configurar credenciales AWS
+      # ==========================================================
       - name: Configurar credenciales AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: us-east-1
-      
+          aws-region: ${{ env.AWS_REGION }}
+
+      # ==========================================================
+      # Instalar kubectl
+      # ==========================================================
       - name: Instalar kubectl
         uses: azure/setup-kubectl@v4
-        
 
-
-      - name: Configurar kubectl
-        env:
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-          EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+      
+      # ==========================================================
+      # Instalar cliente SMTP (msmtp)
+      # ==========================================================
+      - name: Instalar msmtp
+        shell: bash
         run: |
+
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            msmtp \
+            msmtp-mta
+
+          msmtp --version
+
+      # ==========================================================
+      # Configurar kubeconfig
+      # ==========================================================
+      - name: Configurar acceso al Cluster EKS
+        shell: bash
+        run: |
+
+          echo "=============================================="
+          echo " Conectando al Cluster Kubernetes"
+          echo "=============================================="
+
           aws eks update-kubeconfig \
-            --region $AWS_REGION \
-            --name $EKS_CLUSTER_NAME
+            --region "$AWS_REGION" \
+            --name "$CLUSTER_NAME"
 
-      - name: Verificar conexión al cluster
+          echo ""
+          echo "Cluster configurado correctamente."
+                
+      # ==========================================================
+      # Verificar acceso al Cluster
+      # ==========================================================
+      - name: Verificar conexión Kubernetes
+        shell: bash
         run: |
-          kubectl get nodes -o wide 
 
-      - name: Verificar Health API
-        id: healthcheck
+          echo "=============================================="
+          echo " Verificando conexión con Kubernetes"
+          echo "=============================================="
+
+          kubectl cluster-info
+
+          echo ""
+
+          kubectl get nodes
+
+          echo ""
+
+          kubectl get deployment "$DEPLOYMENT_NAME" \
+            -n "$NAMESPACE"
+
+      # ==========================================================
+      # Dar permisos a los scripts
+      # ==========================================================
+      - name: Dar permisos a los scripts
+        shell: bash
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://k8s-tienda-tiendafr-51122e719c-318406bc17e5b379.elb.us-east-1.amazonaws.com/api/health)
 
-          echo "HTTP STATUS = $STATUS"
+          chmod +x scripts/monitor.sh
+          chmod +x scripts/notify.sh
 
-          if [ "$STATUS" != "200" ]; then
-            echo "health=DOWN" >> $GITHUB_OUTPUT
-          else
-            echo "health=UP" >> $GITHUB_OUTPUT
-          fi
+      # ==========================================================
+      # Ejecutar Monitor
+      # ==========================================================
+      - name: Ejecutar Monitor Kubernetes
+        shell: bash
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          CLUSTER_NAME: ${{ env.CLUSTER_NAME }}
+          NAMESPACE: ${{ env.NAMESPACE }}
+          DEPLOYMENT_NAME: ${{ env.DEPLOYMENT_NAME }}
+          HEALTH_URL: ${{ env.HEALTH_URL }}
+          WAIT_SECONDS: ${{ env.WAIT_SECONDS }}
+          MAX_RECOVERY_ATTEMPTS: ${{ env.MAX_RECOVERY_ATTEMPTS }}
+          MAIL_TO: ${{ env.MAIL_TO }}
 
-      - name: Reiniciar Deployment
-        if: steps.healthcheck.outputs.health == 'DOWN'
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         run: |
-          echo "Servicio caído."
-          kubectl rollout restart deployment tienda-backend -n tienda
-          sleep 30
 
-      - name: Verificar nuevamente
-        if: steps.healthcheck.outputs.health == 'DOWN'
-        run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://k8s-tienda-tiendafr-51122e719c-318406bc17e5b379.elb.us-east-1.amazonaws.com/api/health)
-
-          echo "Nuevo estado HTTP: $STATUS"
-
-          if [ "$STATUS" != "200" ]; then
-            echo "El servicio sigue caído."
-            exit 1
-          fi
-
-          echo "Servicio recuperado."
+          ./scripts/monitor.sh
