@@ -41,7 +41,8 @@ env:
   # ==========================================================
   # Aplicación
   # ==========================================================
-  HEALTH_URL: http://k8s-tienda-tiendafr-51122e719c-318406bc17e5b379.elb.us-east-1.amazonaws.com/api/health
+  HEALTH_URL: http://.../api/falso
+  #HEALTH_URL: http://k8s-tienda-tiendafr-51122e719c-318406bc17e5b379.elb.us-east-1.amazonaws.com/api/health
 
   # ==========================================================
   # Monitor
