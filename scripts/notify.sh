@@ -63,7 +63,7 @@ case "$EVENT_TYPE" in
 
     DOWN)
 
-        SUBJECT="🚨 [$INCIDENT_ID] Servicio fuera de línea"
+        SUBJECT="[INCIDENTE] $INCIDENT_ID - Servicio fuera de linea"
 
         BODY=$(cat <<EOF
 Se ha detectado una interrupción en el servicio.
@@ -99,7 +99,7 @@ EOF
 
     RECOVERED)
 
-        SUBJECT="✅ [$INCIDENT_ID] Servicio recuperado automáticamente"
+        SUBJECT="[RECUPERADO] $INCIDENT_ID - Servicio recuperado"
 
         BODY=$(cat <<EOF
 El incidente $INCIDENT_ID ha sido resuelto automáticamente.
@@ -132,7 +132,7 @@ EOF
 
     CRITICAL)
 
-        SUBJECT="🚨 [$INCIDENT_ID] Intervención manual requerida"
+        SUBJECT="[CRITICO] $INCIDENT_ID - Intervencion manual requerida"
 
         BODY=$(cat <<EOF
 No fue posible recuperar automáticamente el servicio.
@@ -188,16 +188,46 @@ log "Puerto        : $SMTP_PORT"
 log "Destinatarios : $MAIL_TO"
 
 # ============================================================
-# TODO:
-#
-# Implementación SMTP.
-#
-# Próxima versión:
-#
-# 1. Autenticación con Gmail
-# 2. Construcción del mensaje RFC822
-# 3. Envío mediante SMTP TLS
-#
+# ============================================================
+# Configuración temporal de msmtp
+# ============================================================
+
+cat > ~/.msmtprc <<EOF
+defaults
+auth on
+tls on
+tls_starttls on
+
+host ${SMTP_SERVER}
+port ${SMTP_PORT}
+
+from ${SMTP_USERNAME}
+user ${SMTP_USERNAME}
+password ${SMTP_PASSWORD}
+
+logfile ~/.msmtp.log
+EOF
+
+chmod 600 ~/.msmtprc
+
+# ============================================================
+# Construcción del correo RFC822
+# ============================================================
+
+cat <<EOF | msmtp ${MAIL_TO}
+From: Tienda Perritos Monitor <${SMTP_USERNAME}>
+To: ${MAIL_TO}
+Subject: ${SUBJECT}
+Content-Type: text/plain; charset=UTF-8
+
+${BODY}
+EOF
+
+log "Correo enviado correctamente."
+
+rm -f ~/.msmtprc
+
+exit 0
 # ============================================================
 
 log "Asunto:"
