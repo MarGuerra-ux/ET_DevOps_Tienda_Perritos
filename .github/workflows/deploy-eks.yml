@@ -1,9 +1,9 @@
 name: CI/CD Tienda Perritos EKS
 
 on:
+  push:
+    branches: [ main ]
   workflow_dispatch: {}
-  schedule:
-    - cron: '*/5 * * * *'
 
 env:
   # Repos de ECR (no son secretos, solo nombres)
